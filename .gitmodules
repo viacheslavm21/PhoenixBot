@@ -1,0 +1,3 @@
+[submodule "cnn2d/yolov5"]
+	path = cnn2d/yolov5
+	url = https://github.com/ultralytics/yolov5.git
