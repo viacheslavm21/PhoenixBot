@@ -29,13 +29,14 @@ ROOT = FILE.parents[0]  # YOLOv5 root directory
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
+sys.path.append('yolov5')
 
-from yolov5.models.common import DetectMultiBackend
-from yolov5.utils.datasets import IMG_FORMATS, VID_FORMATS, LoadImages, LoadStreams
-from yolov5.utils.general import (LOGGER, check_file, check_img_size, check_imshow, check_requirements, colorstr,
+from models.common import DetectMultiBackend
+from utils.datasets import IMG_FORMATS, VID_FORMATS, LoadImages, LoadStreams
+from utils.general import (LOGGER, check_file, check_img_size, check_imshow, check_requirements, colorstr,
                            increment_path, non_max_suppression, print_args, scale_coords, strip_optimizer, xyxy2xywh)
-from yolov5.utils.plots import Annotator, colors, save_one_box
-from yolov5.utils.torch_utils import select_device, time_sync
+from utils.plots import Annotator, colors, save_one_box
+from utils.torch_utils import select_device, time_sync
 
 
 @torch.no_grad()
@@ -59,7 +60,7 @@ def run(weights=ROOT / 'weights/draft1a.pt',  # model.pt path(s)
         project=ROOT / 'runs/detect',  # save results to project/name
         name='exp',  # save results to project/name
         exist_ok=False,  # existing project/name ok, do not increment
-        line_thickness=2,  # bounding box thickness (pixels)
+        line_thickness=1,  # bounding box thickness (pixels)
         hide_labels=False,  # hide labels
         hide_conf=False,  # hide confidences
         half=False,  # use FP16 half-precision inference
@@ -172,6 +173,8 @@ def run(weights=ROOT / 'weights/draft1a.pt',  # model.pt path(s)
             # Stream results
             im0 = annotator.result()
             if view_img:
+                cv2.namedWindow(str(p), cv2.WINDOW_NORMAL)
+                cv2.resizeWindow(str(p),1280,720)
                 cv2.imshow(str(p), im0)
                 cv2.waitKey(1)  # 1 millisecond
 
@@ -206,11 +209,11 @@ def run(weights=ROOT / 'weights/draft1a.pt',  # model.pt path(s)
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'weights/draft1a.pt', help='model path(s)')
-    parser.add_argument('--source', type=str, default=3, help='file/dir/URL/glob, 0 for webcam')
-    parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
-    parser.add_argument('--conf-thres', type=float, default=0.25, help='confidence threshold')
-    parser.add_argument('--iou-thres', type=float, default=0.45, help='NMS IoU threshold')
+    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5weights/type2_1.1.pt', help='model path(s)')
+    parser.add_argument('--source', type=str, default=2, help='file/dir/URL/glob, 0 for webcam')
+    parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[720], help='inference size h,w')
+    parser.add_argument('--conf-thres', type=float, default=0.2, help='confidence threshold')
+    parser.add_argument('--iou-thres', type=float, default=0.1, help='NMS IoU threshold')
     parser.add_argument('--max-det', type=int, default=1000, help='maximum detections per image')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--view-img', action='store_true', help='show results')
@@ -226,7 +229,7 @@ def parse_opt():
     parser.add_argument('--project', default=ROOT / 'runs/detect', help='save results to project/name')
     parser.add_argument('--name', default='exp', help='save results to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
-    parser.add_argument('--line-thickness', default=3, type=int, help='bounding box thickness (pixels)')
+    parser.add_argument('--line-thickness', default=1, type=int, help='bounding box thickness (pixels)')
     parser.add_argument('--hide-labels', default=False, action='store_true', help='hide labels')
     parser.add_argument('--hide-conf', default=False, action='store_true', help='hide confidences')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
