@@ -10,14 +10,26 @@ Usage:
                                                              path/*.jpg  # glob
                                                              'https://youtu.be/Zgi9g1ksQHc'  # YouTube
                                                              'rtsp://example.com/media.mp4'  # RTSP, RTMP, HTTP stream
+
+IMPORTANT: to use realsense stream, configure realsense pipeline globally:
+#Example:
+pipeline = rs.pipeline()
+config = rs.config()
+pipeline.start(config)
+pipeline_wrapper = rs.pipeline_wrapper(pipeline)
+pipeline_profile = config.resolve(pipeline_wrapper)
+device = pipeline_profile.get_device()
+device_product_line = str(device.get_info(rs.camera_info.product_line))
+
 """
 
 import argparse
+import copy
 import os
 import sys
 from pathlib import Path
 
-import cv2
+#import cv2
 import torch
 import torch.backends.cudnn as cudnn
 
@@ -38,16 +50,66 @@ from utils.general import (LOGGER, check_file, check_img_size, check_imshow, che
 from utils.plots import Annotator, colors, save_one_box
 from utils.torch_utils import select_device, time_sync
 
+from loadrsstream import*
+from copy import deepcopy
 
-@torch.no_grad()
+
+class Box:
+    def __init__(self, xyxy, conf, cls):
+        self.xyxy = xyxy
+        self.conf = conf
+        self.cls = cls
+
+    def midpoint(self):
+        midxy = [(self.xyxy[0]+self.xyxy[2])/2, (self.xyxy[1]+self.xyxy[3])/2]
+        return midxy
+
+
+class ProcessPrediction:
+    def __init__(self,imsize):
+        self.boxes = []
+        self.classes = []
+        self.confs = []
+        self.anoimg = cv2.imread("test.png")
+        self.circle_coords = (20, 20)
+
+    def addcircle(self):
+        color = (255, 0, 0)
+        self.anoimg = cv2.circle(self.anoimg, self.circle_coords, 15, color, 5)
+
+    def __next__(self):
+        self.count += 1
+        return self.anoimg
+
+    def __iter__(self):
+        self.count = -1
+        return self
+
+    def __len__(self):
+        return 1E12 #  30 FPS for 30 years
+
+    #def process(self):
+    #    self.purge()
+    #    self.boxes = []
+    #    if self.prediction:
+    #        for det in self.prediction:
+    #             for *xyxy, conf, cls in reversed(det):
+    #                self.boxes.append(Box(xyxy,conf,cls))       #Be careful about non used Box objects!!!
+
+    #def purge(self):
+    #    for box in self.boxes:
+    #        del box
+    #        #print(box)
+
+#@torch.no_grad()
 def run(weights=ROOT / 'weights/draft1a.pt',  # model.pt path(s)
         source= 0, #ROOT / 'data/images',  # file/dir/URL/glob, 0 for webcam
         imgsz=640,  # inference size (pixels)
         conf_thres=0.25,  # confidence threshold
         iou_thres=0.45,  # NMS IOU threshold
         max_det=5,  # maximum detections per image
-        device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
-        view_img=False,  # show results
+        device='cpu',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
+        view_img=True,  # show results
         save_txt=False,  # save results to *.txt
         save_conf=False,  # save confidences in --save-txt labels
         save_crop=False,  # save cropped prediction boxes
@@ -65,12 +127,17 @@ def run(weights=ROOT / 'weights/draft1a.pt',  # model.pt path(s)
         hide_conf=False,  # hide confidences
         half=False,  # use FP16 half-precision inference
         dnn=False,  # use OpenCV DNN for ONNX inference
-        ):
+        store_prediction=False,   # False if not to store prediction, ProcessPrediction object if you want to store it
+        realsense_pipeline=None):
+
     source = str(source)
     save_img = not nosave and not source.endswith('.txt')  # save inference images
-    is_file = Path(source).suffix[1:] in (IMG_FORMATS + VID_FORMATS)
+    is_file = Path(source).suffix[1:] in (IMG_FORMATS + VID_FORMATS) and source != 'realsense'
     is_url = source.lower().startswith(('rtsp://', 'rtmp://', 'http://', 'https://'))
-    webcam = source.isnumeric() or source.endswith('.txt') or (is_url and not is_file)
+    realsense = True if source == 'realsense' else False
+    webcam = (source.isnumeric() or source.endswith('.txt') or (is_url and not is_file)) and not realsense
+
+    #print (realsense, "realsense")
     if is_url and is_file:
         source = check_file(source)  # download
 
@@ -90,10 +157,21 @@ def run(weights=ROOT / 'weights/draft1a.pt',  # model.pt path(s)
         model.model.half() if half else model.model.float()
 
     # Dataloader
-    if webcam:
-        view_img = check_imshow()
+    if realsense:
+        print("checking")
+        #view_img = check_imshow() and view_img
+        print("checking done")
+        #print(check_imshow())
+        cudnn.benchmark = True  # set True to speed up constant image size inference
+        dataset = LoadRSStream(source, img_size=imgsz, stride=stride, auto=pt and not jit, pipeline = realsense_pipeline)
+
+        bs = len(dataset)  # batch_size
+
+    elif webcam:
+        view_img = check_imshow() and view_img
         cudnn.benchmark = True  # set True to speed up constant image size inference
         dataset = LoadStreams(source, img_size=imgsz, stride=stride, auto=pt and not jit)
+
         bs = len(dataset)  # batch_size
     else:
         dataset = LoadImages(source, img_size=imgsz, stride=stride, auto=pt and not jit)
@@ -113,7 +191,6 @@ def run(weights=ROOT / 'weights/draft1a.pt',  # model.pt path(s)
             im = im[None]  # expand for batch dim
         t2 = time_sync()
         dt[0] += t2 - t1
-
         # Inference
         visualize = increment_path(save_dir / Path(path).stem, mkdir=True) if visualize else False
         pred = model(im, augment=augment, visualize=visualize)
@@ -123,14 +200,15 @@ def run(weights=ROOT / 'weights/draft1a.pt',  # model.pt path(s)
         # NMS
         pred = non_max_suppression(pred, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det)
         dt[2] += time_sync() - t3
-
+        #print("reached")
         # Second-stage classifier (optional)
         # pred = utils.general.apply_classifier(pred, classifier_model, im, im0s)
+
 
         # Process predictions
         for i, det in enumerate(pred):  # per image
             seen += 1
-            if webcam:  # batch_size >= 1
+            if webcam or realsense:  # batch_size >= 1
                 p, im0, frame = path[i], im0s[i].copy(), dataset.count
                 s += f'{i}: '
             else:
@@ -145,8 +223,32 @@ def run(weights=ROOT / 'weights/draft1a.pt',  # model.pt path(s)
             annotator = Annotator(im0, line_width=line_thickness, example=str(names))
             if len(det):
                 # Rescale boxes from img_size to im0 size
+                #print ("imoshape", im0.shape)
+                #print ("imshape", im.shape[2:])
+                #print("fulldet",det)
+                #print("det:,:4",det[:, :4])
                 det[:, :4] = scale_coords(im.shape[2:], det[:, :4], im0.shape).round()
-                mostProbableDet = det[0]
+                if store_prediction != False:
+                    # We gonna store normalized coordinates of prediction
+                    temp = np.asarray(deepcopy(det[:, :4]))
+                    #print("temp", temp)
+                    imdim = np.asarray(im0.shape)
+                    #print ("imdim",imdim)
+                    #norm_det = scale_coords(im.shape[2:], temp, (1,1,3))
+                    norm_det = []
+                    for d in temp:
+                        norm_det.append([[d[0] / imdim[1], d[1] / imdim[0]], [d[2] / imdim[1], d[3] / imdim[0]]])
+                    #norm_det = [[temp[:,0] / imdim[1], temp[:,1] / imdim[0]],[temp[:,2] / imdim[1], temp[:,3] / imdim[0]]]
+                    #print(np.asarray(norm_det).T)
+                    store_prediction.boxes = deepcopy(norm_det)
+                    store_prediction.classes = det[:, 5]
+                    store_prediction.confs = det[:, 4]
+                    #print("store_prediction",store_prediction.boxes)
+                    #print(store_prediction.classes)
+                    #print(store_prediction.confs)
+
+                #det[:, :4] = scale_coords(im.shape[2:], det[:, :4], im0.shape).round()
+                #print("det",det[0][:4])
                 # Print results
                 for c in det[:, -1].unique():
                     n = (det[:, -1] == c).sum()  # detections per class
@@ -171,14 +273,20 @@ def run(weights=ROOT / 'weights/draft1a.pt',  # model.pt path(s)
             LOGGER.info(f'{s}Done. ({t3 - t2:.3f}s)')
 
             # Stream results
-            im0 = annotator.result()
+            #im0 = annotator.result()
+            if store_prediction != False:
+                store_prediction.anoimg = deepcopy(im0)
             if view_img:
+                pass
+                #print("view_img",view_img)
+                store_prediction.addcircle()
                 cv2.namedWindow(str(p), cv2.WINDOW_NORMAL)
                 cv2.resizeWindow(str(p),1280,720)
-                cv2.imshow(str(p), im0)
+                cv2.imshow(str(p), store_prediction.anoimg)
                 cv2.waitKey(1)  # 1 millisecond
 
             # Save results (image with detections)
+            """
             if save_img:
                 if dataset.mode == 'image':
                     cv2.imwrite(save_path, im0)
@@ -205,6 +313,7 @@ def run(weights=ROOT / 'weights/draft1a.pt',  # model.pt path(s)
         LOGGER.info(f"Results saved to {colorstr('bold', save_dir)}{s}")
     if update:
         strip_optimizer(weights)  # update model (to fix SourceChangeWarning)
+"""
 
 
 def parse_opt():
