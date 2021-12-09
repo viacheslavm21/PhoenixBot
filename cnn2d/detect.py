@@ -72,9 +72,11 @@ class ProcessPrediction:
         self.confs = []
         self.anoimg = cv2.imread("test.png")
         self.circle_coords = (20, 20)
+        self.color_frame = None
 
     def addcircle(self):
         color = (255, 0, 0)
+        #print(self.circle_coords)
         self.anoimg = cv2.circle(self.anoimg, self.circle_coords, 15, color, 5)
 
     def __next__(self):
@@ -158,10 +160,8 @@ def run(weights=ROOT / 'weights/draft1a.pt',  # model.pt path(s)
 
     # Dataloader
     if realsense:
-        print("checking")
         #view_img = check_imshow() and view_img
-        print("checking done")
-        #print(check_imshow())
+
         cudnn.benchmark = True  # set True to speed up constant image size inference
         dataset = LoadRSStream(source, img_size=imgsz, stride=stride, auto=pt and not jit, pipeline = realsense_pipeline)
 
@@ -200,7 +200,7 @@ def run(weights=ROOT / 'weights/draft1a.pt',  # model.pt path(s)
         # NMS
         pred = non_max_suppression(pred, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det)
         dt[2] += time_sync() - t3
-        #print("reached")
+
         # Second-stage classifier (optional)
         # pred = utils.general.apply_classifier(pred, classifier_model, im, im0s)
 
@@ -223,10 +223,7 @@ def run(weights=ROOT / 'weights/draft1a.pt',  # model.pt path(s)
             annotator = Annotator(im0, line_width=line_thickness, example=str(names))
             if len(det):
                 # Rescale boxes from img_size to im0 size
-                #print ("imoshape", im0.shape)
-                #print ("imshape", im.shape[2:])
-                #print("fulldet",det)
-                #print("det:,:4",det[:, :4])
+
                 det[:, :4] = scale_coords(im.shape[2:], det[:, :4], im0.shape).round()
                 if store_prediction != False:
                     # We gonna store normalized coordinates of prediction
@@ -243,12 +240,9 @@ def run(weights=ROOT / 'weights/draft1a.pt',  # model.pt path(s)
                     store_prediction.boxes = deepcopy(norm_det)
                     store_prediction.classes = det[:, 5]
                     store_prediction.confs = det[:, 4]
-                    #print("store_prediction",store_prediction.boxes)
-                    #print(store_prediction.classes)
-                    #print(store_prediction.confs)
 
-                #det[:, :4] = scale_coords(im.shape[2:], det[:, :4], im0.shape).round()
-                #print("det",det[0][:4])
+
+
                 # Print results
                 for c in det[:, -1].unique():
                     n = (det[:, -1] == c).sum()  # detections per class
@@ -270,12 +264,13 @@ def run(weights=ROOT / 'weights/draft1a.pt',  # model.pt path(s)
                             save_one_box(xyxy, imc, file=save_dir / 'crops' / names[c] / f'{p.stem}.jpg', BGR=True)
 
             # Print time (inference-only)
-            LOGGER.info(f'{s}Done. ({t3 - t2:.3f}s)')
+            #LOGGER.info(f'{s}Done. ({t3 - t2:.3f}s)')
 
             # Stream results
             #im0 = annotator.result()
             if store_prediction != False:
                 store_prediction.anoimg = deepcopy(im0)
+                #store_prediction.color_frame()
             if view_img:
                 pass
                 #print("view_img",view_img)

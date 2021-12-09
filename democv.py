@@ -1,6 +1,8 @@
 """
 Computer vision demonstration: 3D bounding box, 2D BB, depth colormap
+pose to see [-3.9696598688708704, -0.9562233130084437, 2.074517250061035, -4.197008434926168, -0.7210381666766565, -0.049352471028463185]
 """
+
 
 import pyrealsense2 as rs
 import numpy as np
@@ -86,6 +88,7 @@ if not found_rgb:
     exit(0)
 
 config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+
 
 if device_product_line == 'L500':
     config.enable_stream(rs.stream.color, 960, 540, rs.format.bgr8, 30)
@@ -183,17 +186,17 @@ try:
         cv2.circle(color_image, (int(new_x), int(new_y)), 2, (0, 255, 255), 3)
 
         # apply template matching
-        gray = cv2.cvtColor(color_copy, cv2.COLOR_BGR2GRAY)
-        res = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)
+        #gray = cv2.cvtColor(color_copy, cv2.COLOR_BGR2GRAY)
+        #res = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)
 
-        imager = res.astype(np.float32)  # convert to float
-        imager -= imager.min()  # ensure the minimal value is 0.0
-        imager /= imager.max()  # maximum value in image is now 1.0
-        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
-        top_left = max_loc
-        cv2.circle(imager, top_left, 10, (255, 255, 255), 2)
-        bottom_right = (top_left[0] + w, top_left[1] + h)
-        cv2.rectangle(color_image, top_left, bottom_right, 255, 2)
+        #imager = res.astype(np.float32)  # convert to float
+        #imager -= imager.min()  # ensure the minimal value is 0.0
+        #imager /= imager.max()  # maximum value in image is now 1.0
+        #min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+        #top_left = max_loc
+        #cv2.circle(imager, top_left, 10, (255, 255, 255), 2)
+        #bottom_right = (top_left[0] + w, top_left[1] + h)
+        #cv2.rectangle(color_image, top_left, bottom_right, 255, 2)
         obj.draw_boundbox2d(color_copy)
         # If depth and color resolutions are different, resize color image to match depth image for display
         if depth_colormap_dim != color_colormap_dim:
@@ -203,8 +206,8 @@ try:
         else:
             images = np.hstack((color_image, color_copy, depth_colormap))
 
-        cv2.namedWindow('Demo', cv2.WINDOW_NORMAL)
-        cv2.resizeWindow('Demo', 640*3, 480)
+        cv2.namedWindow('Demo', cv2.WINDOW_AUTOSIZE)
+        #cv2.resizeWindow('Demo', 640*3, 480)
         cv2.imshow('Demo', images)
         #imager = cv2.applyColorMap(cv2.convertScaleAbs(imager, alpha=0.03), cv2.COLORMAP_TURBO)
         # Show images
