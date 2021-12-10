@@ -13,6 +13,7 @@ import pyrealsense2 as rs
 import math3d as m3d
 import time
 from time import sleep
+import json
 
 from phoenixutils import pixel_to_3d, middle_point, plane_on_3pts, valid_pred
 
@@ -110,11 +111,55 @@ class Algorithm():
                         print('Successful execution of stage two.')
                         return True
 
+    def two_sec_mean(self):
+        pxs = []
+        for i in range(21):
+            sleep(0.1)
+            ymaxbox = np.argmin(np.asarray(self.storage.boxes)[:,0,1])
+
+            self.current_px = middle_point(self.storage.boxes[ymaxbox])
+            self.storage.circle_coords = (int(self.current_px[0] * self.storage.anoimg.shape[1]),
+                                          int(self.current_px[1] * self.storage.anoimg.shape[0]))
+            pxs.append(self.current_px)
+
+        pxs = np.asarray(pxs)
+
+        return np.sum(pxs,axis=0)/len(pxs)
+
+
+    def test_align(self):
+        x = 0.7
+        current_pose = self.robot.get_pose().pos.array
+        x_to_move = x - current_pose[0]
+        self.robot.movel((x_to_move, 0, 0, 0, 0, 0), 0.05, 0.05, relative=True)
+        while not len(self.storage.boxes):
+            sleep(1)
+        self.desired_px = np.asarray([0.5, 0.4])
+        self.storage.circles_coords.append([int(self.desired_px[0] * self.storage.anoimg.shape[1]),
+                                            int(self.desired_px[1] * self.storage.anoimg.shape[0])])
+        while True:
+            sleep(0.1)
+            ymaxbox = np.argmin(np.asarray(self.storage.boxes)[:,0,1])
+
+            self.current_px = middle_point(self.storage.boxes[ymaxbox])
+            self.storage.circle_coords = (int(self.current_px[0] * self.storage.anoimg.shape[1]),
+                                          int(self.current_px[1] * self.storage.anoimg.shape[0]))
+            self.current_px=self.two_sec_mean()
+            # calculate error
+            error_xy = np.abs(self.desired_px-self.current_px)
+            #print(error_xy)
+                #np.abs(np.sum(self.desired_px-self.current_px))
+            print(self.current_px)
+            error = np.sum(np.abs(self.desired_px - self.current_px))
+            print(error)
+
+
     def iter_speedl(self, movvec):
         self.robot.speedl(movvec, 0.005, 60)
 
         prev_err = 1E6
         while True:
+            sleep(0.1)
             ymaxbox = np.argmin(np.asarray(self.storage.boxes)[:,0,1])
 
             self.current_px = middle_point(self.storage.boxes[ymaxbox])
@@ -122,18 +167,30 @@ class Algorithm():
                                           int(self.current_px[1] * self.storage.anoimg.shape[0]))
 
             # calculate error
-            error = np.abs(np.sum(self.desired_px-self.current_px))
-            #print('error', error)
+            error =  np.sum(np.abs(self.desired_px-self.current_px))
+
             if error < self.pixel_tolerance:
                 self.robot.stop()
                 return True
-            elif error <= prev_err:
-                prev_err = error
+            #elif error <= prev_err:
+             #   prev_err = error
 
             else:
                 #print('Error starts to grow. Change direction')
                 movvec = np.concatenate((self.current_px - self.desired_px, [0, 0, 0, 0]))
-                movvec = movvec / abs(np.linalg.norm(movvec)) / 400
+                if error > 0.1:
+                    print('error', error, 'speed 20')
+                    movvec = movvec / abs(np.linalg.norm(movvec)) / 10
+                elif error < 0.1 and error > 0.01:
+                    print('error', error, 'speed 500')
+                    movvec = movvec / abs(np.linalg.norm(movvec)) / 200
+                elif error < 0.01 and error > 0.002:
+                    print('error', error, 'speed 2000')
+                    movvec = movvec / abs(np.linalg.norm(movvec)) / 2000
+                else:
+                    print('error', error, 'speed 15000')
+                    movvec = movvec / abs(np.linalg.norm(movvec)) / 15000
+
                 SUCCESS = self.iter_speedl(movvec)
                 if SUCCESS:
                     return True
@@ -147,6 +204,8 @@ class Algorithm():
             sleep(1)
 
         self.desired_px = np.asarray([0.5, 0.4])
+        self.storage.circles_coords.append([int(self.desired_px[0] * self.storage.anoimg.shape[1]),
+                                            int(self.desired_px[1] * self.storage.anoimg.shape[0])])
 
         #valid_pred(self.storage)
 
@@ -157,23 +216,29 @@ class Algorithm():
                                       int(self.current_px[1] * self.storage.anoimg.shape[0]))
         sleep(2)
         movvec2d = self.current_px-self.desired_px
-        movvec2d = [movvec2d[0]*self.storage.anoimg.shape[1], movvec2d[1]*self.storage.anoimg.shape[0]] # надо умножить на разрешение кадра цвета АВТОМАТИЧЕСКИ!!!
-
+        movvec2d = [movvec2d[0]*self.storage.anoimg.shape[1], movvec2d[1]*self.storage.anoimg.shape[0]]
+        error =  np.sum(np.abs(self.desired_px-self.current_px))
         print('Vector between pixels ', movvec2d)
         movvec = np.concatenate((movvec2d,[0,0,0,0]))
-        movvec = movvec/abs(np.linalg.norm(movvec))/400
+        movvec = movvec/abs(np.linalg.norm(movvec)) / 10
         self.base_coord_sys = self.robot.csys
         print('Moving tool with ', movvec)
         self.robot.set_csys(self.robot.get_pose())
-        self.pixel_tolerance = 0.008
+        self.pixel_tolerance = 0.0001
         #print('Type (y) to start robot movement ')
         #a = input()
         #if a == 'y':
         SUCCESS = self.iter_speedl(movvec)
-
+        if SUCCESS:
+            movvec2d = self.two_sec_mean() - self.desired_px
+            movvec2d = [movvec2d[0] * self.storage.anoimg.shape[1], movvec2d[1] * self.storage.anoimg.shape[0]]
+            movvec = np.concatenate((movvec2d, [0, 0, 0, 0]))
+            movvec = movvec / abs(np.linalg.norm(movvec)) / 100
+            #self.robot.speedl(movvec, 0.005, 0.1)
         return SUCCESS
 
     def setx(self):
+        """
         print('Type X coordinate of TCP in mm:')
         while True:
             try:
@@ -182,7 +247,8 @@ class Algorithm():
             except:
                 print('Not integer')
                 continue
-
+        """
+        x = 0.7
         current_pose = self.robot.get_pose().pos.array
         x_to_move = x - current_pose[0]
         self.robot.movel((x_to_move, 0, 0, 0, 0, 0), 0.15, 0.15, relative=True)
@@ -190,12 +256,34 @@ class Algorithm():
         return True
 
     def demo_approach(self):
+
         if abs(self.rxc - 0.7) < 1E-6:
-            self.robot.movel((0.041, -0.11, 0.255, 0, 0, 0.05), 0.05, 0.05, relative=True)
+            self.robot.movel((0.0357, -0.114, 0.24, 0, 0, 0.035), 0.05, 0.05, relative=True)
+            self.robot.set_csys(self.base_coord_sys)
+            self.approched_coords = self.robot.getl()[:3]
+            self.robot.set_csys(self.robot.get_pose())
+            self.robot.movel((0.0, 0.0, 0.03, 0, 0, 0.0), 0.007, 0.007, relative=True)
+            best_coord = np.asarray([0.9398318517486319, -0.38714452226169416, 0.4594576102403918])
+            print('Coordinames of TCP', self.approched_coords)
+            self.err = abs(np.sum(self.approched_coords - best_coord))
+            print('ERROR = ', self.err)
+        return True
+
+    def saveres(self):
+        dict = {}
+        dict['coords'] = self.approched_coords
+        dict['err'] = self.err
+        print('Input is insertion was successfull (y/n)')
+        success = input()
+        dict['success'] = success
+        with open('results.txt', 'a') as f:
+            json.dump(dict, f)
+            f.write('\n')
+        return True
 
     def run(self):
         if self.stage == 'Test':
-            #self.iter_speedl_test()
+            self.test_align()
             return
         if self.stage=='DemoPaper':
             STAGE_SET_X = self.setx()
@@ -211,6 +299,12 @@ class Algorithm():
             else:
                 print ('Sth went wrong. Exit')
                 return
+            if STAGE_FOUR:
+                STAGE_FIVE = self.saveres()
+                print('Measured')
+            else:
+                print ('Sth went wrong. Exit')
+
             print('Done!')
             return
         if self.stage != 'Idle':

@@ -21,6 +21,10 @@ def set_init_ori(robot):
            [-1.0, 0.0, 0.0],
            [0.0, -1.0, 0.0]]
     robot.set_orientation(ori,vel=0.1)
+
+if __name__ == "__main__":
+    robot = getrobot()
+    print(robot.getl())
 """
 #print(dir(robot))
 

@@ -28,8 +28,9 @@ import copy
 import os
 import sys
 from pathlib import Path
+import numpy as np
 
-#import cv2
+import cv2
 import torch
 import torch.backends.cudnn as cudnn
 
@@ -73,11 +74,14 @@ class ProcessPrediction:
         self.anoimg = cv2.imread("test.png")
         self.circle_coords = (20, 20)
         self.color_frame = None
+        self.circles_coords = []
 
     def addcircle(self):
-        color = (255, 0, 0)
+        color = (255, 120, 0)
         #print(self.circle_coords)
-        self.anoimg = cv2.circle(self.anoimg, self.circle_coords, 15, color, 5)
+        self.anoimg = cv2.circle(self.anoimg, self.circle_coords, 2, color, 2)
+        for crds in self.circles_coords:
+            self.anoimg = cv2.circle(self.anoimg, crds, 6, (0, 255, 0), 2)
 
     def __next__(self):
         self.count += 1
@@ -103,14 +107,14 @@ class ProcessPrediction:
     #        del box
     #        #print(box)
 
-#@torch.no_grad()
+@torch.no_grad()
 def run(weights=ROOT / 'weights/draft1a.pt',  # model.pt path(s)
         source= 0, #ROOT / 'data/images',  # file/dir/URL/glob, 0 for webcam
         imgsz=640,  # inference size (pixels)
         conf_thres=0.25,  # confidence threshold
         iou_thres=0.45,  # NMS IOU threshold
         max_det=5,  # maximum detections per image
-        device='cpu',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
+        device='0',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
         view_img=True,  # show results
         save_txt=False,  # save results to *.txt
         save_conf=False,  # save confidences in --save-txt labels
@@ -161,7 +165,7 @@ def run(weights=ROOT / 'weights/draft1a.pt',  # model.pt path(s)
     # Dataloader
     if realsense:
         #view_img = check_imshow() and view_img
-
+        print('imshow', check_imshow())
         cudnn.benchmark = True  # set True to speed up constant image size inference
         dataset = LoadRSStream(source, img_size=imgsz, stride=stride, auto=pt and not jit, pipeline = realsense_pipeline)
 
